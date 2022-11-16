@@ -1,0 +1,67 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: pod-chaos-monkey
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  namespace: pod-chaos-monkey
+  labels:
+    app: pod-chaos-monkey
+  name: pod-chaos-monkey
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pod-chaos-monkey
+  template:
+    metadata:
+      labels:
+        app: pod-chaos-monkey
+    spec:
+      containers:
+      - image: smark91/pod-chaos-monkey:1.0
+        imagePullPolicy: Always
+        name: pod-chaos-monkey
+        env:
+        - name: DELETE_DELAY
+          value: "10"
+        - name: DELETE_NAMESPACE
+          value: workloads
+      serviceAccountName: pod-chaos-monkey
+      
+
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  namespace: pod-chaos-monkey
+  name: pod-chaos-monkey
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: pod-chaos-monkey-role
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["list", "delete"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: pod-chaos-monkey-role-binding
+subjects:
+- kind: ServiceAccount
+  name: pod-chaos-monkey
+  namespace: pod-chaos-monkey
+  apiGroup: ""
+roleRef:
+  kind: ClusterRole
+  name: pod-chaos-monkey-role
+  apiGroup: rbac.authorization.k8s.io

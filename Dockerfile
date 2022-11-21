@@ -1,4 +1,4 @@
-FROM golang:1.19.3 AS build
+FROM golang:1.19.3 AS base
 
 WORKDIR /app
 
@@ -8,6 +8,10 @@ RUN go mod download
 
 COPY *.go ./
 
+FROM base as test 
+RUN go test -v
+
+FROM base as build 
 RUN go build -o /pod-chaos-monkey
 
 ## Deploy

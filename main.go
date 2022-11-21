@@ -1,35 +1,65 @@
 package main
 
 import (
-	"context"
+	"errors"
 	"fmt"
-	"math/rand"
 	"os"
 	"strconv"
 	"time"
-
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/rest"
-	//
-	// Uncomment to load all auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth"
-	//
-	// Or uncomment to load specific auth plugins
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/azure"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
-	// _ "k8s.io/client-go/plugin/pkg/client/auth/oidc"
 )
 
 func main() {
 
+	deleteNamespace, deleteDelayInt, err := getEnvVars()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	client, err := getK8sClientset()
+	if err != nil {
+		panic(err.Error())
+	}
+
+	for {
+		// Sleep
+		fmt.Printf("\nSleeping %d seconds...\n", deleteDelayInt)
+		time.Sleep(time.Duration(deleteDelayInt) * time.Second)
+
+		// Get pods list
+		pods, err := listK8sPodsInNamespace(client, deleteNamespace)
+		if err != nil {
+			panic(err.Error())
+		} else if len(pods.Items) < 1 {
+			fmt.Printf("\nThere are no pods in the \"%s\" namespace\n", deleteNamespace)
+			continue
+		}
+		fmt.Printf("\nThere are %d pods in the \"%s\" namespace:\n", len(pods.Items), deleteNamespace)
+		for _, pod := range pods.Items {
+			fmt.Printf("\t- %s\n", pod.Name)
+		}
+
+		// Select random pod for deletion
+		nextDeletePod := getRandomK8sPodFromList(client, deleteNamespace, pods)
+		fmt.Printf("\nSelected randomly %s pod for deletion...\n", nextDeletePod.Name)
+
+		// Delete selected pod
+		err = deleteK8sPodInNamespace(client, deleteNamespace, nextDeletePod.Name)
+		if err != nil {
+			panic(err.Error())
+		} else {
+			fmt.Printf("%s pod deleted!\n", nextDeletePod.Name)
+		}
+	}
+}
+
+func getEnvVars() (string, int, error) {
 	deleteDelay := os.Getenv("DELETE_DELAY")
 	if len(deleteDelay) == 0 {
-		panic("DELETE_DELAY missing!")
+		return "", 0, errors.New("DELETE_DELAY missing!")
 	}
 	deleteNamespace := os.Getenv("DELETE_NAMESPACE")
 	if len(deleteNamespace) == 0 {
-		panic("DELETE_NAMESPACE missing!")
+		return "", 0, errors.New("DELETE_DELAY missing!")
 	}
 
 	fmt.Println("DELETE_DELAY:", deleteDelay)
@@ -39,39 +69,5 @@ func main() {
 	if err != nil {
 		panic(err.Error())
 	}
-
-	// creates the in-cluster config
-	config, err := rest.InClusterConfig()
-	if err != nil {
-		panic(err.Error())
-	}
-	// creates the clientset
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		panic(err.Error())
-	}
-
-	rand.Seed(time.Now().Unix())
-
-	for {
-		pods, err := clientset.CoreV1().Pods(deleteNamespace).List(context.TODO(), metav1.ListOptions{})
-		if err != nil {
-			panic(err.Error())
-		}
-		fmt.Printf("\nThere are %d pods in the \"%s\" namespace:\n", len(pods.Items), deleteNamespace)
-		for _, pod := range pods.Items {
-			fmt.Printf("- %s\n", pod.Name)
-		}
-
-		nextDeletePod := pods.Items[rand.Intn(len(pods.Items))]
-		fmt.Printf("\nSelected randomly %s pod for deletion...\n", nextDeletePod.Name)
-		err = clientset.CoreV1().Pods(deleteNamespace).Delete(context.TODO(), nextDeletePod.Name, metav1.DeleteOptions{})
-		if err != nil {
-			panic(err.Error())
-		}
-		fmt.Printf("%s pod deleted!\n", nextDeletePod.Name)
-
-		fmt.Printf("\nSleeping %d seconds...\n", deleteDelayInt)
-		time.Sleep(time.Duration(deleteDelayInt) * time.Second)
-	}
+	return deleteNamespace, deleteDelayInt, err
 }
